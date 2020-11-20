@@ -28,7 +28,93 @@ if(!dir.exists("./data")){
       print("Storm data was downloaded successfully.")
 }
 
-storm <- read_csv("./data/storm_data.csv.bz2")
+storm <- read_csv("./data/storm_data.csv.bz2",
+                  col_types = cols(
+                        `STATE__` = col_double(),
+                        BGN_DATE = col_datetime("%m/%d/%Y %H:%M:%S"),
+                        BGN_TIME = col_time(format = ""),
+                        TIME_ZONE = col_character(),
+                        COUNTY = col_double(),
+                        COUNTYNAME = col_character(),
+                        STATE = col_character(),
+                        EVTYPE = col_character(),
+                        BGN_RANGE = col_double(),
+                        BGN_AZI = col_character(),
+                        BGN_LOCATI = col_character(),
+                        END_DATE = col_datetime("%m/%d/%Y %H:%M:%S"),
+                        END_TIME = col_time(),
+                        COUNTY_END = col_double(),
+                        COUNTYENDN = col_character(),
+                        END_RANGE = col_double(),
+                        END_AZI = col_character(),
+                        END_LOCATI = col_character(),
+                        LENGTH = col_double(),
+                        WIDTH = col_double(),
+                        F = col_integer(),
+                        MAG = col_double(),
+                        FATALITIES = col_double(),
+                        INJURIES = col_double(),
+                        PROPDMG = col_double(),
+                        PROPDMGEXP = col_character(),
+                        CROPDMG = col_double(),
+                        CROPDMGEXP = col_character(),
+                        WFO = col_character(),
+                        STATEOFFIC = col_character(),
+                        ZONENAMES = col_character(),
+                        LATITUDE = col_double(),
+                        LONGITUDE = col_double(),
+                        LATITUDE_E = col_double(),
+                        LONGITUDE_ = col_double(),
+                        REMARKS = col_character(),
+                        REFNUM = col_double()
+                  ))
+```
+
+There 7 errors in `STATE__`.
+
+```{r}
+p1 <- storm %>%
+      select(STATE__, STATE) %>%
+      unique()
+errors <- p1 %>%
+      group_by(STATE) %>%
+      summarise(count = n()) %>%
+      filter(count > 1) %>%
+      arrange(desc(STATE))
+errors
+correct <- storm %>%
+      filter(STATE %in% errors[["STATE"]]) %>%
+      group_by(STATE, STATE__) %>%
+      summarize(count = n()) %>%
+      group_by(STATE) %>%
+      filter(count == max(count))
+correct
+```
+
+```{r}
+storm$STATE2 = storm$STATE
+storm$STATE__2 = storm$STATE__
+storm[storm$STATE__ == 72 & storm$STATE == "AK", "STATE2"] = "PR"
+storm[storm$STATE__ == 46 & storm$STATE == "SC", "STATE__2"] = 45
+storm[storm$STATE__ == 24 & storm$STATE == "OH", "STATE__2"] = 39
+storm[storm$STATE__ == 35 & storm$STATE == "NJ", "STATE2"] = "NM"
+storm[storm$STATE__ == 39 & storm$STATE == "ND", "STATE2"] = "OH"
+storm[storm$STATE__ == 11 & storm$STATE == "MD", "STATE__2"] = 24
+storm[storm$STATE__ == 26 & storm$STATE == "MA", "STATE2"] = "MI"
+```
+
+Errors renewed:
+
+```{r}
+p1 <- storm %>%
+      select(STATE__2, STATE2) %>%
+      unique()
+errors <- p1 %>%
+      group_by(STATE2) %>%
+      summarise(count = n()) %>%
+      filter(count > 1) %>%
+      arrange(desc(STATE2))
+errors
 ```
 
 ## Questions

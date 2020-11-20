@@ -377,39 +377,77 @@ summary {
 <li>Storm Data.</li>
 </ul>
 <p>There is also some documentation of the database available. Here you will find how some of the variables are constructed/defined.</p>
-<pre><code>## Parsed with column specification:
-## cols(
-##   .default = col_double(),
-##   BGN_DATE = col_character(),
-##   BGN_TIME = col_character(),
-##   TIME_ZONE = col_character(),
-##   COUNTYNAME = col_character(),
-##   STATE = col_character(),
-##   EVTYPE = col_character(),
-##   BGN_AZI = col_logical(),
-##   BGN_LOCATI = col_logical(),
-##   END_DATE = col_logical(),
-##   END_TIME = col_logical(),
-##   COUNTYENDN = col_logical(),
-##   END_AZI = col_logical(),
-##   END_LOCATI = col_logical(),
-##   PROPDMGEXP = col_character(),
-##   CROPDMGEXP = col_logical(),
-##   WFO = col_logical(),
-##   STATEOFFIC = col_logical(),
-##   ZONENAMES = col_logical(),
-##   REMARKS = col_logical()
-## )</code></pre>
-<pre><code>## See spec(...) for full column specifications.</code></pre>
-<pre><code>## Warning: 5255570 parsing failures.
-##  row col           expected actual                        file
-## 1671 WFO 1/0/T/F/TRUE/FALSE     NG &#39;./data/storm_data.csv.bz2&#39;
-## 1673 WFO 1/0/T/F/TRUE/FALSE     NG &#39;./data/storm_data.csv.bz2&#39;
-## 1674 WFO 1/0/T/F/TRUE/FALSE     NG &#39;./data/storm_data.csv.bz2&#39;
-## 1675 WFO 1/0/T/F/TRUE/FALSE     NG &#39;./data/storm_data.csv.bz2&#39;
-## 1678 WFO 1/0/T/F/TRUE/FALSE     NG &#39;./data/storm_data.csv.bz2&#39;
-## .... ... .................. ...... ...........................
+<pre><code>## Warning: 404779 parsing failures.
+## row      col   expected actual                        file
+##   1 BGN_TIME time like    0130 &#39;./data/storm_data.csv.bz2&#39;
+##   2 BGN_TIME time like    0145 &#39;./data/storm_data.csv.bz2&#39;
+##   3 BGN_TIME time like    1600 &#39;./data/storm_data.csv.bz2&#39;
+##   4 BGN_TIME time like    0900 &#39;./data/storm_data.csv.bz2&#39;
+##   5 BGN_TIME time like    1500 &#39;./data/storm_data.csv.bz2&#39;
+## ... ........ .......... ...... ...........................
 ## See problems(...) for more details.</code></pre>
+<p>There 7 errors in <code>STATE__</code>.</p>
+<pre class="r"><code>p1 &lt;- storm %&gt;%
+      select(STATE__, STATE) %&gt;%
+      unique()
+errors &lt;- p1 %&gt;%
+      group_by(STATE) %&gt;%
+      summarise(count = n()) %&gt;%
+      filter(count &gt; 1) %&gt;%
+      arrange(desc(STATE))</code></pre>
+<pre><code>## `summarise()` ungrouping output (override with `.groups` argument)</code></pre>
+<pre class="r"><code>errors</code></pre>
+<pre><code>## # A tibble: 7 x 2
+##   STATE count
+##   &lt;chr&gt; &lt;int&gt;
+## 1 SC        2
+## 2 OH        2
+## 3 NJ        2
+## 4 ND        2
+## 5 MD        2
+## 6 MA        2
+## 7 AK        2</code></pre>
+<pre class="r"><code>correct &lt;- storm %&gt;%
+      filter(STATE %in% errors[[&quot;STATE&quot;]]) %&gt;%
+      group_by(STATE, STATE__) %&gt;%
+      summarize(count = n()) %&gt;%
+      group_by(STATE) %&gt;%
+      filter(count == max(count))</code></pre>
+<pre><code>## `summarise()` regrouping output by &#39;STATE&#39; (override with `.groups` argument)</code></pre>
+<pre class="r"><code>correct</code></pre>
+<pre><code>## # A tibble: 7 x 3
+## # Groups:   STATE [7]
+##   STATE STATE__ count
+##   &lt;chr&gt;   &lt;dbl&gt; &lt;int&gt;
+## 1 AK          2  4390
+## 2 MA         25  5651
+## 3 MD         24  8172
+## 4 ND         38 14630
+## 5 NJ         34  8074
+## 6 OH         39 24921
+## 7 SC         45 17125</code></pre>
+<pre class="r"><code>storm$STATE2 = storm$STATE
+storm$STATE__2 = storm$STATE__
+storm[storm$STATE__ == 72 &amp; storm$STATE == &quot;AK&quot;, &quot;STATE2&quot;] = &quot;PR&quot;
+storm[storm$STATE__ == 46 &amp; storm$STATE == &quot;SC&quot;, &quot;STATE__2&quot;] = 45
+storm[storm$STATE__ == 24 &amp; storm$STATE == &quot;OH&quot;, &quot;STATE__2&quot;] = 39
+storm[storm$STATE__ == 35 &amp; storm$STATE == &quot;NJ&quot;, &quot;STATE2&quot;] = &quot;NM&quot;
+storm[storm$STATE__ == 39 &amp; storm$STATE == &quot;ND&quot;, &quot;STATE2&quot;] = &quot;OH&quot;
+storm[storm$STATE__ == 11 &amp; storm$STATE == &quot;MD&quot;, &quot;STATE__2&quot;] = 24
+storm[storm$STATE__ == 26 &amp; storm$STATE == &quot;MA&quot;, &quot;STATE2&quot;] = &quot;MI&quot;</code></pre>
+<p>Errors renewed:</p>
+<pre class="r"><code>p1 &lt;- storm %&gt;%
+      select(STATE__2, STATE2) %&gt;%
+      unique()
+errors &lt;- p1 %&gt;%
+      group_by(STATE2) %&gt;%
+      summarise(count = n()) %&gt;%
+      filter(count &gt; 1) %&gt;%
+      arrange(desc(STATE2))</code></pre>
+<pre><code>## `summarise()` ungrouping output (override with `.groups` argument)</code></pre>
+<pre class="r"><code>errors</code></pre>
+<pre><code>## # A tibble: 0 x 2
+## # ... with 2 variables: STATE2 &lt;chr&gt;, count &lt;int&gt;</code></pre>
 </div>
 <div id="questions" class="section level2">
 <h2>Questions</h2>
