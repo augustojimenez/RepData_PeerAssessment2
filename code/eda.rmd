@@ -1,121 +1,339 @@
 ---
 title: "Exploring the U.S. National Oceanic and Atmospheric Administrations' (NOAA) storm database"
-author: "Cesar Augusto JImenez Sanchez"
+author: "Cesar Augusto Jimenez Sanchez"
 date: "11/18/2020"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup}
+knitr::opts_chunk$set(cache = TRUE)
 library(tidyverse)
+library(stringdist)
 ```
 
-## Data (trial)
+## Data processing
 
-The data for this assignment come in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. You can download the file from the course web site:
+The data for this assignment was directly downloaded from the URL specified below and stored in a directory named "data" located within the project directory:
 
-- Storm Data.
-
-There is also some documentation of the database available. Here you will find how some of the variables are constructed/defined.
-
-```{r import-data, echo = FALSE}
+```{r import-data}
+# Data source
 url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
-if(!dir.exists("./data")){
+# Verifying whether it's necessary to download the data
+if(!file.exists("./data/storm_data.csv.bz2")){
+   if(!dir.exists("./data")){
       dir.create("data")
       print("Data directory was created.")
-} else if(!file.exists("./data/storm_data.csv.bz2")) {
-      download.file(url, "./data/storm_data.csv.bz2")
-      print("Storm data was downloaded successfully.")
+   }
+   download.file(url, "./data/storm_data.csv.bz2")
+   print("Storm data was downloaded successfully.")
 }
-
+# Importing data
 storm <- read_csv("./data/storm_data.csv.bz2",
                   col_types = cols(
-                        `STATE__` = col_double(),
-                        BGN_DATE = col_datetime("%m/%d/%Y %H:%M:%S"),
-                        BGN_TIME = col_time(format = ""),
-                        TIME_ZONE = col_character(),
-                        COUNTY = col_double(),
-                        COUNTYNAME = col_character(),
-                        STATE = col_character(),
-                        EVTYPE = col_character(),
-                        BGN_RANGE = col_double(),
-                        BGN_AZI = col_character(),
-                        BGN_LOCATI = col_character(),
-                        END_DATE = col_datetime("%m/%d/%Y %H:%M:%S"),
-                        END_TIME = col_time(),
-                        COUNTY_END = col_double(),
-                        COUNTYENDN = col_character(),
-                        END_RANGE = col_double(),
-                        END_AZI = col_character(),
-                        END_LOCATI = col_character(),
-                        LENGTH = col_double(),
-                        WIDTH = col_double(),
-                        F = col_integer(),
-                        MAG = col_double(),
-                        FATALITIES = col_double(),
-                        INJURIES = col_double(),
-                        PROPDMG = col_double(),
-                        PROPDMGEXP = col_character(),
-                        CROPDMG = col_double(),
-                        CROPDMGEXP = col_character(),
-                        WFO = col_character(),
-                        STATEOFFIC = col_character(),
-                        ZONENAMES = col_character(),
-                        LATITUDE = col_double(),
-                        LONGITUDE = col_double(),
-                        LATITUDE_E = col_double(),
-                        LONGITUDE_ = col_double(),
-                        REMARKS = col_character(),
-                        REFNUM = col_double()
-                  ))
+                     .default = col_double(),
+                     BGN_DATE = col_date(format = "%m/%d/%Y %H:%M:%S"),
+                     BGN_TIME = col_time(format = "%H%M"),
+                     TIME_ZONE = col_character(),
+                     COUNTYNAME = col_character(),
+                     STATE = col_character(),
+                     EVTYPE = col_character(),
+                     BGN_AZI = col_character(),
+                     BGN_LOCATI = col_character(),
+                     END_DATE = col_date(format = "%m/%d/%Y %H:%M:%S"),
+                     END_TIME = col_time(format = "%H%M%Z"),
+                     COUNTYENDN = col_character(),
+                     END_AZI = col_character(),
+                     END_LOCATI = col_character(),
+                     F = col_integer(),
+                     PROPDMGEXP = col_character(),
+                     CROPDMGEXP = col_character(),
+                     WFO = col_character(),
+                     STATEOFFIC = col_character(),
+                     ZONENAMES = col_character(),
+                     REMARKS = col_character()))
+# Dataframe's dimensions
+dim(storm)
+# Dataframe's structure
+str(storm)
 ```
+### Subsetting dataframe by date
 
-There 7 errors in `STATE__`.
+As mentioned in the [forum](https://www.coursera.org/learn/reproducible-research/discussions/weeks/4/threads/38y35MMiEeiERhLphT2-QA), the NOAA reported that the data recording start from Jan. 1950, but only recorded on type of event. It is only after Jan. 1996 that they started recording all types of events. And so, we filtered the dataframe to reflect this limition:
 
 ```{r}
-p1 <- storm %>%
-      select(STATE__, STATE) %>%
-      unique()
-errors <- p1 %>%
-      group_by(STATE) %>%
-      summarise(count = n()) %>%
-      filter(count > 1) %>%
-      arrange(desc(STATE))
+storm <- storm %>%
+   filter(BGN_DATE > "1996-01-01")
+```
+
+
+### Select variables of interest
+
+The variables of interest are:
+
+- `EVTYPE`: type of atmospheric event.
+- `FATALITIES`: count of fatalities occurred during each event.
+- `INJURIES`: count of injuries occurred due to each event.
+- `PROPDMG`: property damage.
+- `PROPDMGEXP`: as explained [here](https://rstudio-pubs-static.s3.amazonaws.com/58957_37b6723ee52b455990e149edde45e5b6.html), this is the exponent value for `PROPDMG`.
+- `CROPDMG`: crop damage.
+- `CROPDMGEXP`: same explanation as with `PROPDMEXP`, although for `CROPDMG`.
+- `STATE`: state where the event ocurred.
+- `STATE__`: state's ID. 
+
+```{r}
+storm <- storm %>%
+   select(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP, STATE, STATE__, COUNTYNAME, REMARKS, BGN_LOCATI)
+```
+
+
+### Tranforming `PROPDMGEXP` and `CROPDMGEXP`
+
+The possible values for `CROPDMGEXP` and `PROPDMGEXP` are:
+
+```{r}
+sort(unique(c(storm$CROPDMGEXP, storm$PROPDMGEXP)), decreasing = TRUE)
+```
+Each of those values corresponds to an exponential factor, as follows:
+
+- H,h = hundreds = 100
+- K,k = kilos = thousands = 1,000
+- M,m = millions = 1,000,000
+- B,b = billions = 1,000,000,000
+- (+) = 1
+- (-) = 0
+- (?) = 0
+- black/empty character = 0
+- numeric 0..8 = 10
+
+```{r}
+# Function for converting exp symbols to exp factors
+convert_exp <- function(EXP){
+   EXP <- case_when(is.na(EXP) ~ 0,
+                    grepl("\\?|\\-|\\+", EXP, ignore.case = TRUE) ~ 1,
+                    grepl("[0-9]", EXP, ignore.case = TRUE) ~ 10,
+                    grepl("H", EXP, ignore.case = TRUE) ~ 100,
+                    grepl("K", EXP, ignore.case = TRUE) ~ 1000,
+                    grepl("M", EXP, ignore.case = TRUE) ~ 1000000,
+                    grepl("B", EXP, ignore.case = TRUE) ~ 1000000000,
+                    TRUE ~ NaN)
+   return(EXP)
+}
+# Converting `PRPDMGEXP` and `CROPDMGEXP`
+storm <- storm %>%
+   mutate(PROPDMGEXP = convert_exp(PROPDMGEXP),
+          CROPDMGEXP = convert_exp(CROPDMGEXP))
+```
+
+### Transforming `STATE` and `STATE__` variables
+
+`STATE` and `STATE__` corresponds to the state's name and ID, respectively. Each state must have one, and only one, identifier. Nevertheless, there are 7 states with more than one ID (these will be the states to inspect and correct):
+
+```{r}
+# Getting the states with more than one ID, and its count
+errors <- storm %>%
+   select(STATE__, STATE) %>% 
+   unique() %>% 
+   group_by(STATE) %>%
+   summarise(count = n()) %>%
+   filter(count > 1) %>%
+   arrange(desc(STATE))
 errors
+```
+
+After selecting the states to inspect, the most likely ID corresponding to each of those states was determined by its maximum frequency count. They are as follows:
+
+```{r}
 correct <- storm %>%
-      filter(STATE %in% errors[["STATE"]]) %>%
-      group_by(STATE, STATE__) %>%
-      summarize(count = n()) %>%
-      group_by(STATE) %>%
-      filter(count == max(count))
+   filter(STATE %in% errors[["STATE"]]) %>%
+   group_by(STATE, STATE__) %>%
+   summarize(count = n()) %>%
+   group_by(STATE) %>%
+   filter(count == max(count)) %>%
+   arrange(desc(STATE))
 correct
 ```
+Then we inspected each state visually and make the following corrections (stored in a new variable):
 
 ```{r}
+# New variables where the proposed changes will be stored
 storm$STATE2 = storm$STATE
 storm$STATE__2 = storm$STATE__
+```
+
+There's one entry that corresponds to 'PR' and it is assign to 'AK':
+
+```{r}
+storm[storm$STATE__ == 72 & storm$STATE == "AK", c("COUNTYNAME", "REMARKS")]
 storm[storm$STATE__ == 72 & storm$STATE == "AK", "STATE2"] = "PR"
-storm[storm$STATE__ == 46 & storm$STATE == "SC", "STATE__2"] = 45
-storm[storm$STATE__ == 24 & storm$STATE == "OH", "STATE__2"] = 39
+```
+
+The following entry is wrongly assigned to 'SC', instead of 'SD' (South Dakota):
+
+```{r}
+storm[storm$STATE__ == 46 & storm$STATE == "SC", c("COUNTYNAME", "REMARKS")]
+storm[storm$STATE__ == 46 & storm$STATE == "SC", "STATE2"] = "SD"
+```
+
+The following entry is wrongly assigned the 'OH', instead of 'MD':
+
+```{r}
+storm[storm$STATE__ == 24 & storm$STATE == "OH", c("COUNTYNAME", "REMARKS")]
+storm[storm$STATE__ == 24 & storm$STATE == "OH", "STATE2"] = "MD"
+```
+
+The following entry is wrongly assigned to the state New Jersey, instead of New Mexico:
+
+```{r}
+storm[storm$STATE__ == 35 & storm$STATE == "NJ", c("COUNTYNAME", "REMARKS")]
 storm[storm$STATE__ == 35 & storm$STATE == "NJ", "STATE2"] = "NM"
+```
+
+The following entry is wrongly assigned to the state North Dakota, instead of Ohio:
+
+```{r}
+storm[storm$STATE__ == 39 & storm$STATE == "ND", c("COUNTYNAME", "REMARKS")]
 storm[storm$STATE__ == 39 & storm$STATE == "ND", "STATE2"] = "OH"
-storm[storm$STATE__ == 11 & storm$STATE == "MD", "STATE__2"] = 24
+```
+
+The following is wrongly assigned the ID 11 (DC), instead of 24:
+
+```{r}
+storm[storm$STATE__ == 11 & storm$STATE == "MD", c("COUNTYNAME", "BGN_LOCATI")]
+storm[storm$STATE__ == 11 & storm$STATE == "MD", "STATE2"] = "DC"
+```
+
+The following entry is wrongly assigned to the state Massachusetts, instead of Michigan:
+
+```{r}
+storm[storm$STATE__ == 26 & storm$STATE == "MA", c("COUNTYNAME", "REMARKS")]
 storm[storm$STATE__ == 26 & storm$STATE == "MA", "STATE2"] = "MI"
 ```
 
-Errors renewed:
+Errors corrected:
 
 ```{r}
-p1 <- storm %>%
-      select(STATE__2, STATE2) %>%
-      unique()
-errors <- p1 %>%
-      group_by(STATE2) %>%
-      summarise(count = n()) %>%
-      filter(count > 1) %>%
-      arrange(desc(STATE2))
+errors <- storm %>%
+   select(STATE__2, STATE2) %>%
+   unique() %>%
+   group_by(STATE2) %>%
+   summarise(count = n()) %>%
+   filter(count > 1) %>%
+   arrange(desc(STATE2))
 errors
 ```
+### Another way
+
+The types of event as taken from [here](https://www1.ncdc.noaa.gov/pub/data/swdi/stormevents/csvfiles/Storm-Data-Bulk-csv-Format.pdf) (page 2):
+
+```{r}
+event_type = toupper(c('Astronomical Low Tide',
+               'Avalanche',
+               'Blizzard',
+               'Coastal Flood',
+               'Cold/Wind Chill',
+               'Debris Flow',
+               'Dense Fog',
+               'Dense Smoke',
+               'Drought',
+               'Dust Devil',
+               'Dust Storm',
+               'Excessive Heat',
+               'Extreme Cold/Wind Chill',
+               'Flash Flood',
+               'Flood',
+               'Freezing Fog',
+               'Frost/Freeze',
+               'Funnel Cloud',
+               'Hail',
+               'Heat',
+               'Heavy Rain',
+               'Heavy Snow',
+               'High Surf',
+               'High Wind',
+               'Hurricane (Typhoon)',
+               'Ice Storm',
+               'Lake',
+               'Effect Snow',
+               'Lakeshore Flood',
+               'Lightning C',
+               'Marine Hail',
+               'Marine High Wind',
+               'Marine Strong Wind',
+               'Marine Thunderstorm Wind',
+               'Rip Current',
+               'Seiche',
+               'Sleet',
+               'Storm Surge/Tide',
+               'Strong Wind',
+               'Thunderstorm Wind',
+               'Tornado',
+               'Tropical Depression',
+               'Tropical Storm',
+               'Tsunami',
+               'Volcanic Ash',
+               'Waterspout',
+               'Wildfire',
+               'Winter Storm',
+               'Winter Weather'))
+
+event_match <- function(event, event_list, distance = 4){
+   new_event <- toupper(event_list[amatch(toupper(event), 
+                                          toupper(event_list), 
+                                          maxDist = distance, 
+                                          nomatch = "OTHER")])
+   new_event[is.na(new_event)] = "OTHER"
+   return(new_event)
+}
+
+df <- data.frame(x = storm$EVTYPE, y = event_match(storm$EVTYPE, event_type))
+View(unique(df))
+```
+
+
+```{r}
+storm <- storm %>%
+   mutate(EVTYPE2 = )
+```
+
+
+### Transforming `EVTYPE` variable
+
+There are over nine hundred types of events registered in the NOAA database:
+
+```{r}
+length(unique(storm$EVTYPE))
+```
+
+Many of those events could be classify as one of The most recurring ones (Wind, tornado, ...). The top 15 recurring one are:
+
+```{r}
+storm %>%
+   group_by(EVTYPE) %>%
+   summarise(count = n()) %>%
+   arrange(desc(count)) %>%
+   head(15)
+```
+Then, `EVTYPE` is standarized in the variable `EVTYPE2`:
+
+```{r}
+storm <- storm %>%
+   mutate(EVTYPE2 = case_when(
+      grepl("HAIL", EVTYPE, ignore.case = TRUE) ~ "HAIL",
+      grepl("WIND", EVTYPE, ignore.case = TRUE) ~ "WIND",
+      grepl("TORNADO", EVTYPE, ignore.case = TRUE) ~ "TORNADO",
+      grepl("FLOOD", EVTYPE, ignore.case = TRUE) ~ "FLOOD",
+      grepl("LIGHTNING", EVTYPE, ignore.case = TRUE) ~ "LIGHTNING",
+      grepl("LIGHTING", EVTYPE, ignore.case = TRUE) ~ "LIGHTNING",
+      grepl("SNOW", EVTYPE, ignore.case = TRUE) ~ "SNOW",
+      grepl("RAIN", EVTYPE, ignore.case = TRUE) ~ "RAIN",
+      grepl("STORM", EVTYPE, ignore.case = TRUE) ~ "STORM",
+      grepl("WINTER", EVTYPE, ignore.case = TRUE) ~ "WINTER",
+      grepl("FUNNEL", EVTYPE, ignore.case = TRUE) ~ "FUNNEL",
+      TRUE ~ "OTHER"
+   ))
+sort(table(storm$EVTYPE2), decreasing = TRUE)
+```
+
 
 ## Questions
 
@@ -142,3 +360,8 @@ For this assignment you will need some specific tools
 - The analysis document must have at least one figure containing a plot.
 - Your analysis must have no more than three figures. Figures may have multiple plots in them (i.e. panel plots), but there cannot be more than three figures total.
 - You must show all your code for the work in your analysis document. This may make the document a bit verbose, but that is okay. In general, you should ensure that `echo = TRUE` for every code chunk (this is the default setting in knitr).
+
+```{r}
+sessionInfo()
+```
+
